@@ -3,11 +3,13 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdp.materialize import materialize
+from bdp.api import find_datasets_root
+from bdp.materialize import discover_assets, materialize
 
 SHORT_HELP = """Barefoot Data Portal CLI.
 
 Usage:
+  bdp list
   bdp materialize --all
   bdp materialize ASSET [ASSET...]
 
@@ -27,6 +29,21 @@ def _materialize(args: argparse.Namespace) -> None:
         args.assets,
         all_assets=args.all,
     )
+
+
+def _list_assets(_: argparse.Namespace) -> None:
+    datasets_root = find_datasets_root()
+    assets = discover_assets(datasets_root)
+    if not assets:
+        print("No assets found.")
+        return
+    for name in sorted(assets):
+        asset = assets[name]
+        rel_path = asset.path.relative_to(datasets_root)
+        print(f"- {asset.name} [{asset.kind}] ({rel_path})")
+        for index, dep in enumerate(asset.depends):
+            connector = "└─" if index == len(asset.depends) - 1 else "├─"
+            print(f"  {connector} {dep}")
 
 
 def main() -> None:
@@ -57,6 +74,12 @@ def main() -> None:
         help="Materialize all assets.",
     )
     materialize_parser.set_defaults(func=_materialize)
+
+    list_parser = subparsers.add_parser(
+        "list",
+        help="List available assets.",
+    )
+    list_parser.set_defaults(func=_list_assets)
 
     args = parser.parse_args()
     args.func(args)
