@@ -14,6 +14,7 @@ The Barefoot Data Portal is a minimalistic and functional open data platform to 
   - Run any asset locally and immediately see results
   - Easy to debug
 - No backward compatibility constraints
+- Assets can fail without taking down the whole run
 
 ## Opinions
 
