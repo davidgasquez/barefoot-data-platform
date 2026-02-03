@@ -13,7 +13,7 @@ from typing import Literal
 
 import polars as pl
 
-from bdp.api import DEFAULT_DB_PATH, db_connection, find_datasets_root
+from bdp.api import db_connection, find_datasets_root
 
 AssetKind = Literal["python", "sql", "bash"]
 ASSET_SUFFIXES: dict[str, AssetKind] = {
@@ -35,7 +35,6 @@ class Asset:
     table: str
     path: Path
     kind: AssetKind
-    source: str
     depends: tuple[str, ...]
 
 
@@ -142,7 +141,6 @@ def asset_from_path(path: Path) -> Asset:
         table=table,
         path=path,
         kind=kind,
-        source=source,
         depends=depends,
     )
 
@@ -173,6 +171,8 @@ def extract_metadata_lines(source: str, prefix: str) -> list[str]:
             if not lines:
                 continue
             continue
+        if stripped.startswith("#!") and not lines:
+            continue
         if stripped.startswith(prefix):
             content = stripped[len(prefix) :].lstrip()
             if content:
@@ -185,8 +185,6 @@ def extract_metadata_lines(source: str, prefix: str) -> list[str]:
 def parse_metadata_lines(lines: list[str], path: Path) -> dict[str, list[str]]:
     metadata: dict[str, list[str]] = {}
     for line in lines:
-        if "dataset." not in line:
-            continue
         match = METADATA_LINE_RE.fullmatch(line)
         if match is None:
             raise ValueError(f"Invalid dataset metadata line in {path}: {line}")
@@ -238,7 +236,7 @@ def validate_identifier(value: str, label: str, path: Path) -> None:
 
 
 def materialize_sql(asset: Asset) -> None:
-    sql = asset.source.strip()
+    sql = asset.path.read_text(encoding="utf-8").strip()
     if not sql:
         raise ValueError(f"SQL asset is empty: {asset.path}")
     with db_connection() as conn:
@@ -265,7 +263,7 @@ def materialize_bash(asset: Asset) -> None:
     with db_connection() as conn:
         conn.execute(f"create schema if not exists {asset.schema}")
     env = dict(os.environ)
-    env.setdefault("BDP_DB_PATH", str(DEFAULT_DB_PATH))
+    env.setdefault("BDP_DB_PATH", "bdp.duckdb")
     env["BDP_SCHEMA"] = asset.schema
     env["BDP_TABLE"] = asset.table
     subprocess.run(["bash", asset.path.as_posix()], check=True, env=env)

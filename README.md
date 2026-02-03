@@ -19,7 +19,7 @@ DuckDB lives at `bdp.duckdb` in the current working directory. Override with `BD
 
 ## Metadata
 
-Metadata is a leading comment block at the top of each asset file.
+Metadata is a leading comment block at the top of each asset file. Only `dataset.*` lines are allowed in the metadata block.
 
 Python and bash use `#`.
 
@@ -41,6 +41,7 @@ Fields:
 - `dataset.name` required
 - `dataset.schema` required
 - `dataset.depends` optional comma separated list of `schema.table`
+- no other keys or comment lines allowed in the metadata block
 
 ## Asset types
 
@@ -104,5 +105,5 @@ frame = bdp.table("raw.example")
 Utilities:
 
 - `bdp.table` returns a `polars.DataFrame`
-- `bdp.sql` and `bdp.query` execute SQL
+- `bdp.sql` executes SQL
 - `bdp.db_connection` gives a DuckDB connection

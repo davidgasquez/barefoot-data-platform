@@ -1,20 +1,9 @@
 from __future__ import annotations
 
 import argparse
-import sys
 
 from bdp.api import find_datasets_root
 from bdp.materialize import discover_assets, materialize
-
-SHORT_HELP = """Barefoot Data Platform CLI.
-
-Usage:
-  bdp list
-  bdp materialize --all
-  bdp materialize ASSET [ASSET...]
-
-Run "bdp --help" for more.
-"""
 
 
 def _materialize(args: argparse.Namespace) -> None:
@@ -47,10 +36,6 @@ def _list_assets(_: argparse.Namespace) -> None:
 
 
 def main() -> None:
-    if len(sys.argv) == 1:
-        print(SHORT_HELP)
-        raise SystemExit(0)
-
     parser = argparse.ArgumentParser(
         prog="bdp",
         description="Barefoot Data Platform CLI.",
