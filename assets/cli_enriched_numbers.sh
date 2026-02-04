@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # asset.name = cli_enriched_numbers
 # asset.schema = raw
+# asset.description = Enriched numbers from CLI materialization
 # asset.depends = raw.base_numbers
 
 set -euo pipefail

@@ -36,6 +36,7 @@ class Asset:
     path: Path
     kind: AssetKind
     depends: tuple[str, ...]
+    description: str | None
 
 
 def materialize(
@@ -121,7 +122,7 @@ def build_dependency_map(
     for path in asset_files(assets_root):
         kind = ASSET_SUFFIXES[path.suffix]
         source = path.read_text(encoding="utf-8")
-        schema, name, depends = parse_asset_metadata(
+        schema, name, _, depends = parse_asset_metadata(
             path,
             kind,
             source,
@@ -220,7 +221,7 @@ def asset_files(assets_root: Path) -> list[Path]:
 def asset_from_path(path: Path) -> Asset:
     kind = ASSET_SUFFIXES[path.suffix]
     source = path.read_text(encoding="utf-8")
-    schema, name, depends = parse_asset_metadata(path, kind, source)
+    schema, name, description, depends = parse_asset_metadata(path, kind, source)
     validate_asset_filename(path, name)
     key = f"{schema}.{name}"
     return Asset(
@@ -230,6 +231,7 @@ def asset_from_path(path: Path) -> Asset:
         path=path,
         kind=kind,
         depends=depends,
+        description=description,
     )
 
 
@@ -240,12 +242,13 @@ def parse_asset_metadata(
     *,
     require_body: bool = True,
     check_dep_duplicates: bool = True,
-) -> tuple[str, str, tuple[str, ...]]:
+) -> tuple[str, str, str | None, tuple[str, ...]]:
     metadata, body_lines = metadata_from_source(path, kind, source)
     schema = single_metadata_value(metadata, "schema", path)
     name = single_metadata_value(metadata, "name", path)
     validate_identifier(schema, "schema", path)
     validate_identifier(name, "table", path)
+    description = optional_metadata_value(metadata, "description", path)
     depends = parse_dependencies(
         metadata.get("depends", []),
         path,
@@ -253,7 +256,7 @@ def parse_asset_metadata(
     )
     if require_body:
         ensure_asset_body(body_lines, path)
-    return schema, name, tuple(depends)
+    return schema, name, description, tuple(depends)
 
 
 def extract_metadata_lines(source: str, prefix: str) -> tuple[list[str], list[str]]:
@@ -310,6 +313,21 @@ def parse_metadata_lines(lines: list[str], path: Path) -> dict[str, list[str]]:
 def single_metadata_value(metadata: dict[str, list[str]], key: str, path: Path) -> str:
     if key not in metadata or not metadata[key]:
         raise ValueError(f"Missing asset.{key} in {path}")
+    if len(metadata[key]) != 1:
+        raise ValueError(f"asset.{key} must appear once in {path}")
+    value = metadata[key][0]
+    if not value:
+        raise ValueError(f"asset.{key} must have a value in {path}")
+    return value
+
+
+def optional_metadata_value(
+    metadata: dict[str, list[str]],
+    key: str,
+    path: Path,
+) -> str | None:
+    if key not in metadata or not metadata[key]:
+        return None
     if len(metadata[key]) != 1:
         raise ValueError(f"asset.{key} must appear once in {path}")
     value = metadata[key][0]
@@ -380,6 +398,7 @@ def materialize_sql(asset: Asset) -> None:
         conn.execute(
             f"create or replace table {asset.schema}.{asset.name} as {sql}"
         )
+    comment_on_table(asset.schema, asset.name, asset.description)
 
 
 def materialize_python(asset: Asset) -> None:
@@ -393,6 +412,7 @@ def materialize_python(asset: Asset) -> None:
     if not isinstance(result, pl.DataFrame):
         raise TypeError("Python assets must return polars.DataFrame")
     write_frame(asset.schema, asset.name, result)
+    comment_on_table(asset.schema, asset.name, asset.description)
 
 
 def materialize_bash(asset: Asset) -> None:
@@ -404,6 +424,7 @@ def materialize_bash(asset: Asset) -> None:
     env["BDP_TABLE"] = asset.name
     subprocess.run(["bash", asset.path.as_posix()], check=True, env=env)
     ensure_table_exists(asset.schema, asset.name, asset.path)
+    comment_on_table(asset.schema, asset.name, asset.description)
 
 
 def load_module(module_path: Path) -> ModuleType:
@@ -421,6 +442,16 @@ def write_frame(schema: str, table: str, df: pl.DataFrame) -> None:
         conn.execute(f"create schema if not exists {schema}")
         conn.register("df", df)
         conn.execute(f"create or replace table {schema}.{table} as select * from df")
+
+
+def comment_on_table(schema: str, table: str, description: str | None) -> None:
+    if not description:
+        return
+    escaped = description.replace("'", "''")
+    with db_connection() as conn:
+        conn.execute(
+            f"comment on table {schema}.{table} is '{escaped}'"
+        )
 
 
 def ensure_table_exists(schema: str, table: str, path: Path) -> None:

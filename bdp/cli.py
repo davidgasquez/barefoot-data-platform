@@ -46,6 +46,8 @@ def _list_assets(_: argparse.Namespace) -> None:
         asset = assets[key]
         rel_path = asset.path.relative_to(assets_root)
         print(f"- {asset.key} [{asset.kind}] ({rel_path})")
+        if asset.description:
+            print(f"  description: {asset.description}")
         for index, dep in enumerate(asset.depends):
             connector = "└─" if index == len(asset.depends) - 1 else "├─"
             print(f"  {connector} {dep}")

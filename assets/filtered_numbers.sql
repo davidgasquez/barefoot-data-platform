@@ -1,5 +1,6 @@
 -- asset.name = filtered_numbers
 -- asset.schema = raw
+-- asset.description = Filtered values from transformed numbers
 -- asset.depends = raw.transformed_numbers
 select
     value,

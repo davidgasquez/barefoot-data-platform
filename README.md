@@ -27,6 +27,7 @@ Python and bash use `#`.
 ```python
 # asset.name = base_numbers
 # asset.schema = raw
+# asset.description = Base numbers for demos
 # asset.depends = raw.other_table, raw.more_tables
 ```
 
@@ -35,12 +36,14 @@ SQL uses `--`.
 ```sql
 -- asset.name = base_numbers
 -- asset.schema = raw
+-- asset.description = Base numbers for demos
 ```
 
 Fields:
 
 - `asset.name` required (table name)
 - `asset.schema` required
+- `asset.description` optional free text stored as a table comment
 - `asset.depends` optional comma separated list of `schema.table` (repeatable)
 - other comment lines in the block are ignored
 
@@ -53,6 +56,7 @@ Define a function named after `asset.name`. It must return a `polars.DataFrame`.
 ```python
 # asset.name = base_numbers
 # asset.schema = raw
+# asset.description = Base numbers for demos
 import polars as pl
 
 def base_numbers() -> pl.DataFrame:
@@ -66,6 +70,7 @@ The file is a SQL query with metadata.
 ```sql
 -- asset.name = base_numbers
 -- asset.schema = raw
+-- asset.description = Base numbers for demos
 
 select 1 as value
 ```
@@ -88,6 +93,7 @@ The script must create the table using environment variables.
 #!/usr/bin/env bash
 # asset.name = cli_numbers
 # asset.schema = raw
+# asset.description = Base numbers for demos
 
 set -euo pipefail
 

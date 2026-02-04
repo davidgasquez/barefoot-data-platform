@@ -1,5 +1,6 @@
 # asset.name = transformed_numbers
 # asset.schema = raw
+# asset.description = Derived number transformations
 # asset.depends = raw.base_numbers
 import polars as pl
 

@@ -37,6 +37,7 @@ The Barefoot Data Platform is a minimalistic and functional open data platform t
 - File name must match `asset.name`
 - Metadata block at file top as language comments
   - Required `asset.name`, `asset.schema`
+  - Optional `asset.description`
   - Optional `asset.depends` (can be repeated)
 - Run checks (`uv run bdp check`) after writing assets
 
