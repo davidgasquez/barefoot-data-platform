@@ -109,6 +109,7 @@ SQL
 - `bdp check`
 - `bdp materialize`
 - `bdp materialize schema.table [schema.table ...]`
+- `bdp docs --out index.html`
 
 ## Python API
 

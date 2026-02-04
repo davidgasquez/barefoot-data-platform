@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 from bdp.api import find_assets_root
+from bdp.docs import generate_docs
 from bdp.materialize import (
     check_asset_bodies,
     check_asset_filenames,
@@ -53,6 +55,10 @@ def _list_assets(_: argparse.Namespace) -> None:
             print(f"  {connector} {dep}")
 
 
+def _docs(args: argparse.Namespace) -> None:
+    generate_docs(Path(args.out), sample_rows=args.sample_rows)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="bdp",
@@ -84,6 +90,23 @@ def main() -> None:
         help="List available assets.",
     )
     list_parser.set_defaults(func=_list_assets)
+
+    docs_parser = subparsers.add_parser(
+        "docs",
+        help="Generate asset documentation.",
+    )
+    docs_parser.add_argument(
+        "--out",
+        default="index.html",
+        help="Output HTML file. Defaults to index.html.",
+    )
+    docs_parser.add_argument(
+        "--sample-rows",
+        type=int,
+        default=10,
+        help="Number of sample rows per asset.",
+    )
+    docs_parser.set_defaults(func=_docs)
 
     args = parser.parse_args()
     args.func(args)
