@@ -12,7 +12,6 @@ def _materialize(args: argparse.Namespace) -> None:
 
 def _check(_: argparse.Namespace) -> None:
     check_assets()
-    print("Assets: OK")
 
 
 def _list_assets(_: argparse.Namespace) -> None:

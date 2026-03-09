@@ -1,6 +1,7 @@
+import ast
 import importlib.util
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
@@ -22,6 +23,22 @@ IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 METADATA_LINE_RE = re.compile(
     r"asset\.(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>.*)"
 )
+ValidationReporter = Callable[[str, str], None]
+PARSE_ASSETS_LABEL = "parse asset files and metadata"
+UNIQUE_ASSET_KEYS_LABEL = "validate unique asset keys"
+PYTHON_ENTRYPOINTS_LABEL = "validate python asset entrypoints"
+DEPENDENCIES_LABEL = "validate dependencies"
+DEPENDENCY_ORDERING_LABEL = "validate dependency ordering"
+CHECK_STATUS_WIDTH = (
+    max(
+        len(PARSE_ASSETS_LABEL),
+        len(UNIQUE_ASSET_KEYS_LABEL),
+        len(PYTHON_ENTRYPOINTS_LABEL),
+        len(DEPENDENCIES_LABEL),
+        len(DEPENDENCY_ORDERING_LABEL),
+    )
+    + 8
+)
 
 
 @dataclass(frozen=True)
@@ -36,29 +53,94 @@ class Asset:
 
 
 def materialize(names: Iterable[str] | None = None) -> None:
-    assets = discover_assets(find_assets_root())
-    graph = dependency_graph(assets)
-    for key in materialization_order(names, assets, graph):
-        asset = assets[key]
-        if asset.kind == "python":
-            materialize_python(asset)
-            continue
-        materialize_sql(asset)
+    assets = ordered_assets(names)
+    total = len(assets)
+    count_width = len(str(total))
+    asset_width = max((len(asset.key) for asset in assets), default=0)
+    for index, asset in enumerate(assets, start=1):
+        try:
+            materialize_asset(asset)
+        except Exception:
+            print(
+                format_materialize_status(
+                    index,
+                    total,
+                    count_width,
+                    asset_width,
+                    asset,
+                    "FAIL",
+                ),
+                flush=True,
+            )
+            raise
+        print(
+            format_materialize_status(
+                index,
+                total,
+                count_width,
+                asset_width,
+                asset,
+                "OK",
+            ),
+            flush=True,
+        )
 
 
 def check_assets() -> None:
-    assets = discover_assets(find_assets_root())
-    graph = dependency_graph(assets)
-    topological_order(graph)
+    ordered_assets(reporter=print_check_status)
+
+
+def ordered_assets(
+    names: Iterable[str] | None = None,
+    reporter: ValidationReporter | None = None,
+) -> list[Asset]:
+    assets, graph = validate_assets(find_assets_root(), reporter)
+    selected = resolve_selection(names, assets, graph)
+    selected_graph = {key: graph[key] for key in sorted(selected)}
+    ordered_keys = run_validation_step(
+        DEPENDENCY_ORDERING_LABEL,
+        reporter,
+        lambda: topological_order(selected_graph),
+    )
+    return [assets[key] for key in ordered_keys]
 
 
 def discover_assets(assets_root: Path) -> dict[str, Asset]:
-    assets: dict[str, Asset] = {}
+    assets, _ = validate_assets(assets_root)
+    return assets
+
+
+def validate_assets(
+    assets_root: Path,
+    reporter: ValidationReporter | None = None,
+) -> tuple[dict[str, Asset], dict[str, tuple[str, ...]]]:
+    assets = run_validation_step(
+        PARSE_ASSETS_LABEL,
+        reporter,
+        lambda: collect_assets(assets_root),
+    )
+    indexed_assets = run_validation_step(
+        UNIQUE_ASSET_KEYS_LABEL,
+        reporter,
+        lambda: index_assets(assets),
+    )
+    run_validation_step(
+        PYTHON_ENTRYPOINTS_LABEL,
+        reporter,
+        lambda: validate_python_asset_entrypoints(indexed_assets.values()),
+    )
+    graph = run_validation_step(
+        DEPENDENCIES_LABEL,
+        reporter,
+        lambda: dependency_graph(indexed_assets),
+    )
+    return indexed_assets, graph
+
+
+def collect_assets(assets_root: Path) -> list[Asset]:
+    assets: list[Asset] = []
     for path in asset_files(assets_root):
-        asset = asset_from_path(path, assets_root)
-        if asset.key in assets:
-            raise ValueError(f"Duplicate asset key: {asset.key}")
-        assets[asset.key] = asset
+        assets.append(asset_from_path(path, assets_root))
     return assets
 
 
@@ -77,14 +159,13 @@ def dependency_graph(assets: dict[str, Asset]) -> dict[str, tuple[str, ...]]:
     return graph
 
 
-def materialization_order(
-    names: Iterable[str] | None,
-    assets: dict[str, Asset],
-    graph: dict[str, tuple[str, ...]],
-) -> list[str]:
-    selected = resolve_selection(names, assets, graph)
-    selected_graph = {key: graph[key] for key in sorted(selected)}
-    return topological_order(selected_graph)
+def index_assets(assets: Iterable[Asset]) -> dict[str, Asset]:
+    indexed_assets: dict[str, Asset] = {}
+    for asset in assets:
+        if asset.key in indexed_assets:
+            raise ValueError(f"Duplicate asset key: {asset.key}")
+        indexed_assets[asset.key] = asset
+    return indexed_assets
 
 
 def topological_order(graph: dict[str, tuple[str, ...]]) -> list[str]:
@@ -116,6 +197,52 @@ def resolve_selection(
             selected.add(dependency)
             stack.append(dependency)
     return selected
+
+
+def format_materialize_status(
+    index: int,
+    total: int,
+    count_width: int,
+    asset_width: int,
+    asset: Asset,
+    status: str,
+) -> str:
+    return (
+        f"[{index:>{count_width}}/{total:>{count_width}}] "
+        f"{asset.key:<{asset_width}} {status}"
+    )
+
+
+def run_validation_step[T](
+    label: str,
+    reporter: ValidationReporter | None,
+    func: Callable[[], T],
+) -> T:
+    try:
+        result = func()
+    except Exception:
+        report_validation_status(reporter, label, "FAIL")
+        raise
+    report_validation_status(reporter, label, "OK")
+    return result
+
+
+def report_validation_status(
+    reporter: ValidationReporter | None,
+    label: str,
+    status: str,
+) -> None:
+    if reporter is None:
+        return
+    reporter(label, status)
+
+
+def print_check_status(label: str, status: str) -> None:
+    print(format_check_status(label, status), flush=True)
+
+
+def format_check_status(label: str, status: str) -> str:
+    return f"{label:.<{CHECK_STATUS_WIDTH}} {status}"
 
 
 def asset_files(assets_root: Path) -> list[Path]:
@@ -216,8 +343,7 @@ def unsupported_metadata_message(key: str, path: Path) -> str:
         )
     if key == "name":
         return (
-            f"Unsupported asset.name in {path}. "
-            "Table names come from the asset path."
+            f"Unsupported asset.name in {path}. Table names come from the asset path."
         )
     return f"Unsupported asset.{key} in {path}"
 
@@ -295,6 +421,53 @@ def validate_identifier(value: str, label: str, path: Path) -> None:
         raise ValueError(f"Invalid {label} name '{value}' from {path}")
 
 
+def validate_python_asset_entrypoints(assets: Iterable[Asset]) -> None:
+    for asset in assets:
+        if asset.kind != "python":
+            continue
+        validate_python_asset_source(asset.path)
+
+
+def validate_python_asset_source(path: Path) -> None:
+    function_name = python_asset_function_name(path)
+    source = path.read_text(encoding="utf-8")
+    try:
+        module = ast.parse(source, filename=str(path))
+    except SyntaxError as exc:
+        raise ValueError(invalid_python_asset_message(path, exc)) from exc
+
+    for node in module.body:
+        if (
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == function_name
+        ):
+            return
+
+    raise ValueError(
+        f"Python asset {path} must define top-level function {function_name}"
+    )
+
+
+def invalid_python_asset_message(path: Path, error: SyntaxError) -> str:
+    location = ""
+    if error.lineno is not None:
+        location = f" at line {error.lineno}"
+        if error.offset is not None:
+            location = f"{location}, column {error.offset}"
+    return f"Invalid Python asset {path}: {error.msg}{location}"
+
+
+def python_asset_function_name(path: Path) -> str:
+    return path.stem
+
+
+def materialize_asset(asset: Asset) -> None:
+    if asset.kind == "python":
+        materialize_python(asset)
+        return
+    materialize_sql(asset)
+
+
 def materialize_sql(asset: Asset) -> None:
     query = asset.path.read_text(encoding="utf-8").strip()
     if not query:
@@ -307,9 +480,12 @@ def materialize_sql(asset: Asset) -> None:
 
 def materialize_python(asset: Asset) -> None:
     module = load_module(asset.path)
-    func = getattr(module, asset.name, None)
+    function_name = python_asset_function_name(asset.path)
+    func = getattr(module, function_name, None)
     if func is None or not callable(func):
-        raise ValueError(f"Python asset {asset.path} must define callable {asset.name}")
+        raise ValueError(
+            f"Python asset {asset.path} must define callable {function_name}"
+        )
     result = func()
     if not isinstance(result, pl.DataFrame):
         raise TypeError("Python assets must return polars.DataFrame")
