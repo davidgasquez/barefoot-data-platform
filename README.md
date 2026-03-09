@@ -8,6 +8,7 @@ that materialize into DuckDB.
 - `uv run bdp list`
 - `uv run bdp check`
 - `uv run bdp materialize`
+- `uv run bdp test`
 - `uv run bdp materialize raw.base_numbers`
 - `uv run bdp materialize main.enriched_numbers`
 
@@ -45,6 +46,9 @@ Supported keys:
 - `asset.description` optional free text stored as a table comment
 - `asset.depends` optional comma-separated `schema.table` references and may be
   repeated
+- `asset.not_null` optional comma-separated columns that must not be null
+- `asset.unique` optional repeatable comma-separated unique constraints
+- `asset.assert` optional repeatable SQL boolean expressions
 
 Other comment lines in the metadata block are ignored.
 
@@ -57,6 +61,9 @@ Define a function named after the file name. It must return a
 
 ```python
 # asset.description = Base numbers for demos
+# asset.not_null = value
+# asset.unique = value
+# asset.assert = value > 0
 import polars as pl
 
 
@@ -87,8 +94,25 @@ create or replace table schema.table_name as <sql>
 - `bdp list`
 - `bdp check`
 - `bdp materialize`
+- `bdp test`
 - `bdp materialize schema.table [schema.table ...]`
 - `bdp docs --out index.html`
+
+## Data Tests
+
+Run data tests with:
+
+- `uv run bdp test`
+
+`bdp test` materializes all assets, runs inline metadata checks, then runs any
+custom SQL tests found in `tests/data/**/*.test.sql`.
+
+Custom SQL test files use the pattern:
+
+- `tests/data/raw.orders__customer_exists.test.sql`
+- `tests/data/raw.orders__no_future_shipments.test.sql`
+
+Each file must be a SQL query that returns failing rows.
 
 ## Python API
 

@@ -38,6 +38,9 @@ The Barefoot Data Platform is a minimalistic and functional open data platform t
 - Metadata block at file top as language comments
   - Optional `asset.description`
   - Optional and repeatable `asset.depends`
+  - Optional `asset.not_null`
+  - Optional and repeatable `asset.unique`
+  - Optional and repeatable `asset.assert`
 
 ### Python Assets
 
@@ -49,3 +52,10 @@ The Barefoot Data Platform is a minimalistic and functional open data platform t
 
 - File content is a SQL query only
 - Runner executes `create or replace table schema.file_stem as <sql>`
+
+## Data Tests
+
+- Run data tests with `uv run bdp test`
+- Put custom SQL data tests in `tests/data/`
+- Use `schema.table__name.test.sql` file names
+- A test query returns failing rows

@@ -18,7 +18,7 @@ ASSET_KIND_BY_SUFFIX: dict[str, AssetKind] = {
     ".sql": "sql",
 }
 COMMENT_PREFIXES: dict[AssetKind, str] = {"python": "#", "sql": "--"}
-SUPPORTED_METADATA_KEYS = {"description", "depends"}
+SUPPORTED_METADATA_KEYS = {"description", "depends", "not_null", "unique", "assert"}
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 METADATA_LINE_RE = re.compile(
     r"asset\.(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>.*)"
@@ -42,6 +42,13 @@ CHECK_STATUS_WIDTH = (
 
 
 @dataclass(frozen=True)
+class AssetTests:
+    not_null: tuple[str, ...]
+    unique: tuple[tuple[str, ...], ...]
+    assertions: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class Asset:
     name: str
     schema: str
@@ -50,10 +57,15 @@ class Asset:
     kind: AssetKind
     depends: tuple[str, ...]
     description: str | None
+    tests: AssetTests
 
 
 def materialize(names: Iterable[str] | None = None) -> None:
     assets = ordered_assets(names)
+    materialize_assets(assets)
+
+
+def materialize_assets(assets: list[Asset]) -> None:
     total = len(assets)
     count_width = len(str(total))
     asset_width = max((len(asset.key) for asset in assets), default=0)
@@ -275,6 +287,11 @@ def asset_from_path(path: Path, assets_root: Path) -> Asset:
         kind=kind,
         depends=tuple(parse_dependencies(metadata.get("depends", []), path)),
         description=optional_metadata_value(metadata, "description", path),
+        tests=AssetTests(
+            not_null=tuple(parse_not_null(metadata.get("not_null", []), path)),
+            unique=tuple(parse_unique(metadata.get("unique", []), path)),
+            assertions=tuple(parse_assertions(metadata.get("assert", []), path)),
+        ),
     )
 
 
@@ -380,6 +397,59 @@ def parse_dependencies(values: list[str], path: Path) -> list[str]:
             seen.add(dependency)
             dependencies.append(dependency)
     return dependencies
+
+
+def parse_not_null(values: list[str], path: Path) -> list[str]:
+    columns: list[str] = []
+    seen: set[str] = set()
+    for raw_value in values:
+        for column in parse_column_list(raw_value, path, "not_null"):
+            if column in seen:
+                raise ValueError(
+                    f"Duplicate asset.not_null column '{column}' in {path}"
+                )
+            seen.add(column)
+            columns.append(column)
+    return columns
+
+
+def parse_unique(values: list[str], path: Path) -> list[tuple[str, ...]]:
+    constraints: list[tuple[str, ...]] = []
+    seen: set[tuple[str, ...]] = set()
+    for raw_value in values:
+        columns = tuple(parse_column_list(raw_value, path, "unique"))
+        if columns in seen:
+            joined = ", ".join(columns)
+            raise ValueError(f"Duplicate asset.unique constraint '{joined}' in {path}")
+        seen.add(columns)
+        constraints.append(columns)
+    return constraints
+
+
+def parse_assertions(values: list[str], path: Path) -> list[str]:
+    assertions: list[str] = []
+    seen: set[str] = set()
+    for raw_value in values:
+        assertion = raw_value.strip()
+        if not assertion:
+            raise ValueError(f"asset.assert must have a value in {path}")
+        if assertion in seen:
+            raise ValueError(f"Duplicate asset.assert '{assertion}' in {path}")
+        seen.add(assertion)
+        assertions.append(assertion)
+    return assertions
+
+
+def parse_column_list(raw_value: str, path: Path, key: str) -> list[str]:
+    columns = [part.strip() for part in raw_value.split(",")]
+    parsed_columns = [column for column in columns if column]
+    if not parsed_columns:
+        raise ValueError(f"asset.{key} must have a value in {path}")
+    if len(parsed_columns) != len(set(parsed_columns)):
+        raise ValueError(f"Duplicate asset.{key} columns in {path}")
+    for column in parsed_columns:
+        validate_identifier(column, "column", path)
+    return parsed_columns
 
 
 def ensure_asset_body(body_lines: list[str], path: Path) -> None:
