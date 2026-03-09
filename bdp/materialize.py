@@ -17,7 +17,7 @@ ASSET_KIND_BY_SUFFIX: dict[str, AssetKind] = {
     ".sql": "sql",
 }
 COMMENT_PREFIXES: dict[AssetKind, str] = {"python": "#", "sql": "--"}
-SUPPORTED_METADATA_KEYS = {"schema", "description", "depends"}
+SUPPORTED_METADATA_KEYS = {"description", "depends"}
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 METADATA_LINE_RE = re.compile(
     r"asset\.(?P<key>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<value>.*)"
@@ -55,7 +55,7 @@ def check_assets() -> None:
 def discover_assets(assets_root: Path) -> dict[str, Asset]:
     assets: dict[str, Asset] = {}
     for path in asset_files(assets_root):
-        asset = asset_from_path(path)
+        asset = asset_from_path(path, assets_root)
         if asset.key in assets:
             raise ValueError(f"Duplicate asset key: {asset.key}")
         assets[asset.key] = asset
@@ -133,16 +133,12 @@ def asset_files(assets_root: Path) -> list[Path]:
     return sorted(asset_paths)
 
 
-def asset_from_path(path: Path) -> Asset:
+def asset_from_path(path: Path, assets_root: Path) -> Asset:
     kind = asset_kind_from_path(path)
     source = path.read_text(encoding="utf-8")
     metadata, body_lines = metadata_from_source(path, kind, source)
     ensure_asset_body(body_lines, path)
-
-    name = path.stem
-    schema = required_metadata_value(metadata, "schema", path)
-    validate_identifier(name, "table", path)
-    validate_identifier(schema, "schema", path)
+    schema, name = asset_identity_from_path(path, assets_root)
 
     return Asset(
         name=name,
@@ -169,8 +165,6 @@ def metadata_from_source(
 ) -> tuple[dict[str, list[str]], list[str]]:
     prefix = COMMENT_PREFIXES[kind]
     metadata_lines, body_lines = extract_metadata_lines(source, prefix)
-    if not metadata_lines:
-        raise ValueError(f"Missing asset metadata in {path}")
     return parse_metadata_lines(metadata_lines, path), body_lines
 
 
@@ -215,25 +209,17 @@ def parse_metadata_lines(lines: list[str], path: Path) -> dict[str, list[str]]:
 
 
 def unsupported_metadata_message(key: str, path: Path) -> str:
+    if key == "schema":
+        return (
+            f"Unsupported asset.schema in {path}. "
+            "Schema comes from the first folder under assets."
+        )
     if key == "name":
-        return f"Unsupported asset.name in {path}. Table names come from the file name."
+        return (
+            f"Unsupported asset.name in {path}. "
+            "Table names come from the asset path."
+        )
     return f"Unsupported asset.{key} in {path}"
-
-
-def required_metadata_value(
-    metadata: dict[str, list[str]],
-    key: str,
-    path: Path,
-) -> str:
-    values = metadata.get(key, [])
-    if not values:
-        raise ValueError(f"Missing asset.{key} in {path}")
-    if len(values) != 1:
-        raise ValueError(f"asset.{key} must appear once in {path}")
-    value = values[0]
-    if not value:
-        raise ValueError(f"asset.{key} must have a value in {path}")
-    return value
 
 
 def optional_metadata_value(
@@ -275,6 +261,22 @@ def ensure_asset_body(body_lines: list[str], path: Path) -> None:
         if line.strip():
             return
     raise ValueError(f"Asset file has no content beyond metadata: {path}")
+
+
+def asset_identity_from_path(path: Path, assets_root: Path) -> tuple[str, str]:
+    path_parts = path.relative_to(assets_root).with_suffix("").parts
+    if len(path_parts) < 2:
+        raise ValueError(
+            f"Asset path must include a schema folder under assets: {path}"
+        )
+
+    schema, *table_parts = path_parts
+    validate_identifier(schema, "schema", path)
+    for part in table_parts:
+        validate_identifier(part, "table", path)
+
+    name = "_".join(table_parts)
+    return schema, name
 
 
 def validate_asset_reference(value: str, path: Path) -> None:

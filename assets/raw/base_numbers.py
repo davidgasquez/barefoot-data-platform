@@ -1,4 +1,3 @@
-# asset.schema = raw
 # asset.description = Base numbers for demos
 import polars as pl
 

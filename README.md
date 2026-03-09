@@ -9,6 +9,7 @@ that materialize into DuckDB.
 - `uv run bdp check`
 - `uv run bdp materialize`
 - `uv run bdp materialize raw.base_numbers`
+- `uv run bdp materialize main.enriched_numbers`
 
 DuckDB lives at `bdp.duckdb` in the current working directory. Override with
 `BDP_DB_PATH`.
@@ -17,27 +18,37 @@ DuckDB lives at `bdp.duckdb` in the current working directory. Override with
 
 - Assets live in `assets/` and its subdirectories.
 - Supported suffixes are `.py` and `.sql`.
-- The file name is the table name.
-- The asset key is `schema.file_stem`.
+- The first folder under `assets/` is the schema.
+- Remaining folders become table-name prefixes joined with `_`.
+- The file name is the final table-name segment.
+- The asset key is derived as `schema.table_name`.
+- Files directly under `assets/` are invalid.
 - Files starting with `_` are ignored.
 - The runner searches for the nearest `assets/` directory from the current
   working directory.
 
+Examples:
+
+- `assets/raw/base_numbers.py` -> `raw.base_numbers`
+- `assets/raw/alt/base_numbers.py` -> `raw.alt_base_numbers`
+- `assets/main/enriched_numbers.sql` -> `main.enriched_numbers`
+
 ## Metadata
 
-Metadata is a leading comment block at the top of each asset file.
+Metadata is an optional leading comment block at the top of each asset file.
 
 - Python uses `#`
 - SQL uses `--`
 
 Supported keys:
 
-- `asset.schema` required
 - `asset.description` optional free text stored as a table comment
 - `asset.depends` optional comma-separated `schema.table` references and may be
   repeated
 
-`asset.name` is not supported. Table names come from the file name.
+`asset.name` is not supported. Table names come from the asset path.
+`asset.schema` is not supported. Schema comes from the first folder under
+`assets/`.
 
 Other comment lines in the metadata block are ignored.
 
@@ -49,7 +60,6 @@ Define a function named after the file name. It must return a
 `polars.DataFrame`.
 
 ```python
-# asset.schema = raw
 # asset.description = Base numbers for demos
 import polars as pl
 
@@ -65,7 +75,6 @@ Python assets can use the public API to read dependencies or run SQL.
 The file is a SQL query with metadata.
 
 ```sql
--- asset.schema = raw
 -- asset.description = Base numbers for demos
 
 select 1 as value
@@ -74,7 +83,7 @@ select 1 as value
 The runner executes it as:
 
 ```sql
-create or replace table schema.file_stem as <sql>
+create or replace table schema.table_name as <sql>
 ```
 
 ## CLI

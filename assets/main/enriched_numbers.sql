@@ -1,4 +1,3 @@
--- asset.schema = raw
 -- asset.description = Enriched numbers from SQL materialization
 -- asset.depends = raw.base_numbers
 select
