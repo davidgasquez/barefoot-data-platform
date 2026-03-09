@@ -1,7 +1,6 @@
 # Repository Guidelines
 
-The Barefoot Data Platform is a minimalistic and functional open data platform
-to help get, transform and publish datasets in the age of agents.
+The Barefoot Data Platform is a minimalistic and functional open data platform to help get, transform and publish datasets in the age of agents.
 
 ## Principles
 
@@ -10,7 +9,7 @@ to help get, transform and publish datasets in the age of agents.
 - Modular, declarative, independent, composable steps
 - Low abstractions, no frameworks
 - Everything is text/code, everything is versioned
-- Colocated metadata and documentation
+- Colocated assets, metadata, tests, and documentation
 - Quick feedback cycles
   - Run any asset locally and immediately see results
   - Easy to debug
@@ -19,14 +18,12 @@ to help get, transform and publish datasets in the age of agents.
 
 ## Opinions
 
-- Each asset is responsible for its own materialization and dependencies
-- Datasets are files without any glue code
-- Use full refresh pipelines as default
+- Assets are files
+- Stateless runs
 
 ## Code
 
-- Always `make run` after changing code
-- Check `README.md` is up to date
+- Run checks with `make check` after writing assets
 - Always use `uv`
   - `uv run file.py`
   - `uv add`
@@ -34,20 +31,18 @@ to help get, transform and publish datasets in the age of agents.
 
 ## Writing Assets
 
-- Write assets (`.py` and `.sql`) inside the `assets/` folder and subdirectories
-- File name is the table name
+- Write assets (`.py` and `.sql`) inside the `assets/` folder
+  - First level directory is the database schema. Further folders become prefixes. 
+    - `assets/raw/base_numbers.py` becomes the table `raw.base_numbers`
+    - `assets/raw/alt/base_numbers.py` becomes the table `raw.alt_base_numbers`
 - Metadata block at file top as language comments
-  - Required `asset.schema`
   - Optional `asset.description`
-  - Optional `asset.depends` (can be repeated)
-- `asset.name` is not supported
-- Run checks with `uv run bdp check` after writing assets
+  - Optional and repeatable `asset.depends`
 
 ### Python Assets
 
-- Define a callable function named after the file stem with no arguments
-- Return a `polars.DataFrame`
-- Use `bdp.table("schema.table")` to read dependencies
+- Define a callable function that returns a `polars.DataFrame` or `None`(custom materialization).
+- Use `bdp.table("schema.table")` to load a dependency
 - Use `bdp.sql("sql query")` to run arbitrary SQL against the database
 
 ### SQL Assets

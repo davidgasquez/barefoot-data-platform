@@ -46,10 +46,6 @@ Supported keys:
 - `asset.depends` optional comma-separated `schema.table` references and may be
   repeated
 
-`asset.name` is not supported. Table names come from the asset path.
-`asset.schema` is not supported. Schema comes from the first folder under
-`assets/`.
-
 Other comment lines in the metadata block are ignored.
 
 ## Asset Types

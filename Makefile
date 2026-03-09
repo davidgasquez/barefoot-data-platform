@@ -4,7 +4,7 @@ lint:
 	uv run ruff check
 	uv run ty check
 
-check:
+check: lint
 	uv run bdp check
 
 run:
