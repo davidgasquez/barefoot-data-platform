@@ -56,8 +56,10 @@ Other comment lines in the metadata block are ignored.
 
 ### Python
 
-Define a function named after the file name. It must return a
-`polars.DataFrame`.
+Define a function named after the file name.
+
+- Use `-> pl.DataFrame` to let the runner materialize the returned frame.
+- Use `-> None` when the asset materializes its own table.
 
 ```python
 # asset.description = Base numbers for demos

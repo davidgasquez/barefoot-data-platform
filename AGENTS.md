@@ -28,6 +28,7 @@ The Barefoot Data Platform is a minimalistic and functional open data platform t
   - `uv run file.py`
   - `uv add`
   - `uv --help`
+- Data tests live on the asset metadata or in `tests/data/*.sql`
 
 ## Writing Assets
 

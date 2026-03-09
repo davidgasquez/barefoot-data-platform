@@ -13,6 +13,7 @@ import polars as pl
 from bdp.api import db_connection, find_assets_root
 
 AssetKind = Literal["python", "sql"]
+PythonMaterialization = Literal["dataframe", "manual"]
 ASSET_KIND_BY_SUFFIX: dict[str, AssetKind] = {
     ".py": "python",
     ".sql": "sql",
@@ -55,6 +56,7 @@ class Asset:
     key: str
     path: Path
     kind: AssetKind
+    python_materialization: PythonMaterialization | None
     depends: tuple[str, ...]
     description: str | None
     tests: AssetTests
@@ -278,6 +280,9 @@ def asset_from_path(path: Path, assets_root: Path) -> Asset:
     metadata, body_lines = metadata_from_source(path, kind, source)
     ensure_asset_body(body_lines, path)
     schema, name = asset_identity_from_path(path, assets_root)
+    python_materialization = (
+        python_asset_materialization(path, source) if kind == "python" else None
+    )
 
     return Asset(
         name=name,
@@ -285,6 +290,7 @@ def asset_from_path(path: Path, assets_root: Path) -> Asset:
         key=f"{schema}.{name}",
         path=path,
         kind=kind,
+        python_materialization=python_materialization,
         depends=tuple(parse_dependencies(metadata.get("depends", []), path)),
         description=optional_metadata_value(metadata, "description", path),
         tests=AssetTests(
@@ -507,8 +513,34 @@ def validate_python_asset_entrypoints(assets: Iterable[Asset]) -> None:
 
 
 def validate_python_asset_source(path: Path) -> None:
-    function_name = python_asset_function_name(path)
     source = path.read_text(encoding="utf-8")
+    python_asset_materialization(path, source)
+
+
+def python_asset_materialization(
+    path: Path,
+    source: str | None = None,
+) -> PythonMaterialization:
+    function_node = python_asset_function_node(path, source)
+    return_annotation = function_node.returns
+    if is_none_annotation(return_annotation):
+        return "manual"
+    if is_polars_dataframe_annotation(return_annotation):
+        return "dataframe"
+    function_name = python_asset_function_name(path)
+    raise ValueError(
+        f"Python asset {path} function {function_name} must declare return type "
+        "pl.DataFrame or None"
+    )
+
+
+def python_asset_function_node(
+    path: Path,
+    source: str | None = None,
+) -> ast.FunctionDef | ast.AsyncFunctionDef:
+    function_name = python_asset_function_name(path)
+    if source is None:
+        source = path.read_text(encoding="utf-8")
     try:
         module = ast.parse(source, filename=str(path))
     except SyntaxError as exc:
@@ -519,10 +551,23 @@ def validate_python_asset_source(path: Path) -> None:
             isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
             and node.name == function_name
         ):
-            return
+            return node
 
     raise ValueError(
         f"Python asset {path} must define top-level function {function_name}"
+    )
+
+
+def is_none_annotation(annotation: ast.expr | None) -> bool:
+    return isinstance(annotation, ast.Constant) and annotation.value is None
+
+
+def is_polars_dataframe_annotation(annotation: ast.expr | None) -> bool:
+    return (
+        isinstance(annotation, ast.Attribute)
+        and annotation.attr == "DataFrame"
+        and isinstance(annotation.value, ast.Name)
+        and annotation.value.id == "pl"
     )
 
 
@@ -565,11 +610,25 @@ def materialize_python(asset: Asset) -> None:
             f"Python asset {asset.path} must define callable {function_name}"
         )
     result = func()
+    if asset.python_materialization == "manual":
+        if result is not None:
+            raise TypeError("Self-materialized Python assets must return None")
+        with db_connection() as conn:
+            comment_on_table(conn, asset)
+        return
+    if asset.python_materialization != "dataframe":
+        raise TypeError(f"Invalid Python materialization mode for {asset.path}")
     if not isinstance(result, pl.DataFrame):
-        raise TypeError("Python assets must return polars.DataFrame")
+        raise TypeError(
+            "Python assets with -> pl.DataFrame must return polars.DataFrame"
+        )
+    materialize_polars_frame(asset, result)
+
+
+def materialize_polars_frame(asset: Asset, frame: pl.DataFrame) -> None:
     with db_connection() as conn:
         conn.execute(f"create schema if not exists {asset.schema}")
-        conn.register("frame", result)
+        conn.register("frame", frame)
         conn.execute(f"create or replace table {asset.key} as select * from frame")
         comment_on_table(conn, asset)
 
