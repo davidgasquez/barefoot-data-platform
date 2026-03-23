@@ -270,6 +270,8 @@ def asset_files(assets_root: Path) -> list[Path]:
             continue
         if path.suffix not in ASSET_KIND_BY_SUFFIX:
             continue
+        if path.name.endswith(".test.sql"):
+            continue
         asset_paths.append(path)
     return sorted(asset_paths)
 

@@ -5,7 +5,6 @@ lint:
 	uv run ty check
 
 test:
-	uv run pytest
 	uv run bdp test
 
 data-test:

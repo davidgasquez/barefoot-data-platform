@@ -4,6 +4,7 @@ import duckdb
 
 from bdp.api import db_connection, find_assets_root
 from bdp.materialize import Asset, discover_assets
+from bdp.test import custom_test_paths_for_asset
 
 
 def show_asset(name: str, sample_rows: int = 5) -> None:
@@ -31,7 +32,7 @@ def show_asset(name: str, sample_rows: int = 5) -> None:
         print("  - none")
     print()
     print("tests:")
-    test_lines = asset_test_lines(asset, project_root)
+    test_lines = asset_test_lines(asset, assets_root, project_root)
     if test_lines:
         for line in test_lines:
             print(f"  - {line}")
@@ -48,22 +49,15 @@ def show_asset(name: str, sample_rows: int = 5) -> None:
         print(f"  {line}")
 
 
-def asset_test_lines(asset: Asset, project_root: Path) -> list[str]:
+def asset_test_lines(asset: Asset, assets_root: Path, project_root: Path) -> list[str]:
     lines = [
         *(f"not_null: {column}" for column in asset.tests.not_null),
         *(f"unique: {column}" for column in asset.tests.unique),
         *(f"assert: {assertion}" for assertion in asset.tests.assertions),
     ]
-    for path in custom_test_paths(project_root, asset.key):
+    for path in custom_test_paths_for_asset(asset, assets_root):
         lines.append(f"custom: {path.relative_to(project_root).as_posix()}")
     return lines
-
-
-def custom_test_paths(project_root: Path, asset_key: str) -> list[Path]:
-    tests_root = project_root / "tests" / "data"
-    if not tests_root.is_dir():
-        return []
-    return sorted(tests_root.rglob(f"{asset_key}__*.test.sql"))
 
 
 def table_exists(conn: duckdb.DuckDBPyConnection, asset: Asset) -> bool:

@@ -28,7 +28,7 @@ The Barefoot Data Platform is a minimalistic and functional open data platform t
   - `uv run file.py`
   - `uv add`
   - `uv --help`
-- Data tests live on the asset metadata or in `tests/data/*.sql`
+- Data tests live on the asset metadata or as `*.test.sql` files in `assets/`
 
 ## Writing Assets
 
@@ -57,6 +57,5 @@ The Barefoot Data Platform is a minimalistic and functional open data platform t
 ## Data Tests
 
 - Run data tests with `uv run bdp test`
-- Put custom SQL data tests in `tests/data/`
-- Use `schema.table__name.test.sql` file names
+- Put custom SQL data tests anywhere under `assets/` (e.g. `assets/raw/asset_name___test_name.test.sql`)
 - A test query returns failing rows

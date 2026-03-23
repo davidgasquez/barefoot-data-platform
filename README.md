@@ -109,12 +109,13 @@ Run data tests with:
 - `uv run bdp test`
 
 `bdp test` materializes all assets, runs inline metadata checks, then runs any
-custom SQL tests found in `tests/data/**/*.test.sql`.
+custom SQL tests found in `assets/**/*.test.sql`.
 
-Custom SQL test files use the pattern:
+Custom SQL test files can live anywhere under `assets/`. The only requirement
+is the file name pattern:
 
-- `tests/data/raw.orders__customer_exists.test.sql`
-- `tests/data/raw.orders__no_future_shipments.test.sql`
+- `assets/raw/orders__customer_exists.test.sql`
+- `assets/raw/tests/orders__no_future_shipments.test.sql`
 
 Each file must be a SQL query that returns failing rows.
 

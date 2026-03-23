@@ -9,6 +9,7 @@ from bdp.materialize import (
     materialize_assets,
     ordered_assets,
     validate_asset_reference,
+    validate_identifier,
 )
 
 
@@ -35,11 +36,12 @@ def test_assets(sample_rows: int = 10) -> None:
 
 
 def collect_data_tests(assets: list[Asset]) -> list[DataTest]:
-    project_root = find_assets_root().parent
+    assets_root = find_assets_root()
+    project_root = assets_root.parent
     indexed_assets = {asset.key: asset for asset in assets}
     return [
         *inline_data_tests(assets, project_root),
-        *custom_sql_tests(project_root, indexed_assets),
+        *custom_sql_tests(assets_root, project_root, indexed_assets),
     ]
 
 
@@ -77,32 +79,36 @@ def inline_data_tests(assets: list[Asset], project_root: Path) -> list[DataTest]
 
 
 def custom_sql_tests(
+    assets_root: Path,
     project_root: Path,
     assets: dict[str, Asset],
 ) -> list[DataTest]:
-    tests_root = project_root / "tests" / "data"
-    if not tests_root.is_dir():
-        return []
     return [
-        sql_data_test_from_path(path, project_root, assets)
-        for path in sorted(tests_root.rglob("*.test.sql"))
+        sql_data_test_from_path(path, assets_root, project_root, assets)
+        for path in custom_test_paths(assets_root)
     ]
+
+
+def custom_test_paths(assets_root: Path) -> list[Path]:
+    return sorted(assets_root.rglob("*.test.sql"))
+
+
+def custom_test_paths_for_asset(asset: Asset, assets_root: Path) -> list[Path]:
+    paths: list[Path] = []
+    for path in custom_test_paths(assets_root):
+        asset_key, _ = data_test_identity_from_path(path, assets_root)
+        if asset_key == asset.key:
+            paths.append(path)
+    return paths
 
 
 def sql_data_test_from_path(
     path: Path,
+    assets_root: Path,
     project_root: Path,
     assets: dict[str, Asset],
 ) -> DataTest:
-    base_name = path.name.removesuffix(".test.sql")
-    asset_key, separator, test_name = base_name.partition("__")
-    if not separator or not test_name:
-        raise ValueError(
-            f"Invalid data test file name '{path}'. "
-            "Expected schema.table__name.test.sql"
-        )
-
-    validate_asset_reference(asset_key, path)
+    asset_key, test_name = data_test_identity_from_path(path, assets_root)
     if asset_key not in assets:
         raise ValueError(f"Unknown asset '{asset_key}' referenced in {path}")
 
@@ -111,6 +117,29 @@ def sql_data_test_from_path(
         query=read_test_query(path),
         source=path.relative_to(project_root).as_posix(),
     )
+
+
+def data_test_identity_from_path(path: Path, assets_root: Path) -> tuple[str, str]:
+    relative_path = path.relative_to(assets_root)
+    if len(relative_path.parts) < 2:
+        raise ValueError(
+            f"Data test path must include a schema folder under assets: {path}"
+        )
+
+    schema = relative_path.parts[0]
+    validate_identifier(schema, "schema", path)
+    base_name = path.name.removesuffix(".test.sql")
+    asset_name, separator, test_name = base_name.partition("__")
+    if not separator or not test_name:
+        raise ValueError(
+            f"Invalid data test file name '{path}'. Expected asset__name.test.sql"
+        )
+
+    validate_identifier(asset_name, "table", path)
+    validate_identifier(test_name, "test", path)
+    asset_key = f"{schema}.{asset_name}"
+    validate_asset_reference(asset_key, path)
+    return asset_key, test_name
 
 
 def read_test_query(path: Path) -> str:
